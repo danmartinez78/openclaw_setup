@@ -81,22 +81,25 @@ _copy_workspace_files() {
     local src="$1" dest="$2"
     local copied=0
 
-    # Copy individual workspace files
-    for f in SOUL.md AGENTS.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOT.md MEMORY.md; do
+    # Copy individual workspace files (agent identity + tasks + memory)
+    for f in SOUL.md AGENTS.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOT.md MEMORY.md \
+             TASKS.md TASK_BACKLOG.md COMPLETED_TASKS.md MIGRATION_PLAN.md; do
         if [[ -f "${src}/${f}" ]]; then
             cp -v "${src}/${f}" "${dest}/${f}"
             ((copied++))
         fi
     done
 
-    # Copy memory directory
-    if [[ -d "${src}/memory" ]]; then
-        cp -rv "${src}/memory" "${dest}/"
-        local mem_count
-        mem_count="$(find "${dest}/memory" -name '*.md' | wc -l)"
-        log_info "  Migrated memory/ directory (${mem_count} entries)"
-        ((copied++))
-    fi
+    # Copy directories (memory, research, config)
+    for d in memory research config; do
+        if [[ -d "${src}/${d}" ]]; then
+            cp -rv "${src}/${d}" "${dest}/"
+            local count
+            count="$(find "${dest}/${d}" -type f | wc -l)"
+            log_info "  Migrated ${d}/ directory (${count} files)"
+            ((copied++))
+        fi
+    done
 
     # Fix ownership
     chown -R "${REAL_USER}:${REAL_USER}" "$dest"
@@ -105,14 +108,17 @@ _copy_workspace_files() {
         log_success "Migrated ${copied} agent file(s) from existing install"
         echo ""
         echo -e "  ${BOLD}Migrated workspace files:${NC}"
-        for f in SOUL.md AGENTS.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOT.md MEMORY.md; do
+        for f in SOUL.md AGENTS.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOT.md MEMORY.md \
+                 TASKS.md TASK_BACKLOG.md COMPLETED_TASKS.md MIGRATION_PLAN.md; do
             if [[ -f "${dest}/${f}" ]]; then
                 echo -e "    ${GREEN}✓${NC} ${f}"
             fi
         done
-        if [[ -d "${dest}/memory" ]]; then
-            echo -e "    ${GREEN}✓${NC} memory/ ($(find "${dest}/memory" -name '*.md' | wc -l) entries)"
-        fi
+        for d in memory research config; do
+            if [[ -d "${dest}/${d}" ]]; then
+                echo -e "    ${GREEN}✓${NC} ${d}/ ($(find "${dest}/${d}" -type f | wc -l) files)"
+            fi
+        done
         echo ""
         log_info "  Skipping bootstrap since workspace files were migrated"
         # Set flag so openclaw.json skipBootstrap is true
@@ -175,16 +181,112 @@ install_openclaw() {
         model_block="${model_block} },"
     fi
 
-    # --- Build custom providers config (for Haimaker if configured) ---
+    # --- Build custom providers config (Haimaker + Gemini with full model defs) ---
     local providers_block=""
+    local has_providers=false
+    local provider_entries=""
+
+    # Haimaker — custom OpenAI-compatible provider with model catalog
     if [[ -n "${HAIMAKER_API_KEY:-}" && -n "${HAIMAKER_BASE_URL:-}" ]]; then
+        has_providers=true
+        provider_entries='"haimaker": {
+        "baseUrl": "'"${HAIMAKER_BASE_URL}"'",
+        "apiKey": "\${HAIMAKER_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "openai/gpt-oss-120b",
+            "name": "GPT-OSS 120B",
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 128000
+          },
+          {
+            "id": "minimax/minimax-m2.1",
+            "name": "MiniMax M2.1",
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 128000
+          }
+        ]
+      }'
+    fi
+
+    # Gemini — explicit provider entry with model catalog
+    if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        [[ "$has_providers" == true ]] && provider_entries="${provider_entries},
+      "
+        has_providers=true
+        provider_entries="${provider_entries}"'"google": {
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "apiKey": "\${GEMINI_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "gemini-2.5-flash",
+            "name": "Gemini 2.5 Flash",
+            "input": ["text", "image"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 1000000
+          },
+          {
+            "id": "gemini-2.5-flash-lite",
+            "name": "Gemini 2.5 Flash-Lite",
+            "input": ["text", "image"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 1000000
+          }
+        ]
+      }'
+    fi
+
+    if [[ "$has_providers" == true ]]; then
         providers_block=',
   "models": {
     "providers": {
-      "haimaker": {
-        "baseUrl": "'"${HAIMAKER_BASE_URL}"'",
-        "apiKey": "\${HAIMAKER_API_KEY}",
-        "api": "openai-completions"
+      '"${provider_entries}"'
+    }
+  }'
+    fi
+
+    # --- Build Telegram channel config ---
+    local telegram_block=""
+    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+        # Build allowFrom array from IDs + usernames
+        local allow_entries=""
+        if [[ -n "${TELEGRAM_ALLOW_IDS:-}" ]]; then
+            allow_entries=$(echo "$TELEGRAM_ALLOW_IDS" | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | jq -R . | jq -s .)
+        fi
+        if [[ -n "${TELEGRAM_ALLOW_USERNAMES:-}" ]]; then
+            local username_entries
+            username_entries=$(echo "$TELEGRAM_ALLOW_USERNAMES" | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | jq -R . | jq -s .)
+            if [[ -n "$allow_entries" && "$allow_entries" != "[]" ]]; then
+                # Merge both arrays
+                allow_entries=$(jq -s 'add' <<< "${allow_entries}${username_entries}")
+            else
+                allow_entries="$username_entries"
+            fi
+        fi
+
+        local allow_from_json="[]"
+        if [[ -n "$allow_entries" ]]; then
+            allow_from_json="$allow_entries"
+        fi
+
+        telegram_block=',
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "allowlist",
+      "allowFrom": '"${allow_from_json}"',
+      "groupPolicy": "allowlist",
+      "streamMode": "partial"
+    }
+  },
+  "plugins": {
+    "entries": {
+      "telegram": {
+        "enabled": true
       }
     }
   }'
@@ -240,7 +342,7 @@ install_openclaw() {
   },
   "session": {
     "dmScope": "per-channel-peer"
-  }${providers_block}
+  }${providers_block}${telegram_block}
 }
 OPENCLAW_CONFIG
 
@@ -257,10 +359,11 @@ OPENCLAW_CONFIG
 OPENCLAW_ENV
 
     # Only write keys that are set (non-empty)
-    [[ -n "${ZAI_API_KEY:-}" ]]      && echo "ZAI_API_KEY=${ZAI_API_KEY}" >> "$env_file"
-    [[ -n "${GEMINI_API_KEY:-}" ]]   && echo "GEMINI_API_KEY=${GEMINI_API_KEY}" >> "$env_file"
-    [[ -n "${HAIMAKER_API_KEY:-}" ]] && echo "HAIMAKER_API_KEY=${HAIMAKER_API_KEY}" >> "$env_file"
-    [[ -n "${HF_TOKEN:-}" ]]         && echo "HF_TOKEN=${HF_TOKEN}" >> "$env_file"
+    [[ -n "${ZAI_API_KEY:-}" ]]          && echo "ZAI_API_KEY=${ZAI_API_KEY}" >> "$env_file"
+    [[ -n "${GEMINI_API_KEY:-}" ]]       && echo "GEMINI_API_KEY=${GEMINI_API_KEY}" >> "$env_file"
+    [[ -n "${HAIMAKER_API_KEY:-}" ]]     && echo "HAIMAKER_API_KEY=${HAIMAKER_API_KEY}" >> "$env_file"
+    [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]   && echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}" >> "$env_file"
+    [[ -n "${HF_TOKEN:-}" ]]             && echo "HF_TOKEN=${HF_TOKEN}" >> "$env_file"
 
     chown "${REAL_USER}:${REAL_USER}" "$env_file"
     chmod 600 "$env_file"
