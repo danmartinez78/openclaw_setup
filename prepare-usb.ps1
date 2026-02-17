@@ -1,10 +1,13 @@
-# prepare-usb.ps1 - Bundle setup repo + Tachi workspace onto a USB drive
-# Usage: .\prepare-usb.ps1 -UsbDrive "G:"
+# prepare-usb.ps1 - Bundle setup repo + agent workspace onto a USB drive
+# Usage: .\prepare-usb.ps1 -UsbDrive "G:" [-WorkspacePath "C:\path\to\workspace"]
 # SAFE: Never overwrites existing files on the drive.
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$UsbDrive
+    [string]$UsbDrive,
+
+    [Parameter(Mandatory=$false)]
+    [string]$WorkspacePath = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,18 +21,22 @@ if (-not (Test-Path $UsbDrive)) {
 
 $destRoot      = "$UsbDrive\openclaw_deploy"
 $destRepo      = "$destRoot\openclaw_setup"
-$destWorkspace = "$destRoot\tachi-workspace"
+$destWorkspace = "$destRoot\agent-workspace"
 $destConfig    = "$destRoot\config.env"
 
-$srcRepo       = 'C:\GitHub\openclaw_setup'
-$srcWorkspace  = 'G:\Tachi\workspace'
+$srcRepo       = $PSScriptRoot
+$srcWorkspace  = $WorkspacePath
 
 Write-Host ''
 Write-Host '=== OpenClaw USB Deployment Prep ===' -ForegroundColor Cyan
 Write-Host "  USB drive:    $UsbDrive"
 Write-Host "  Destination:  $destRoot"
 Write-Host "  Source repo:  $srcRepo"
-Write-Host "  Source workspace: $srcWorkspace"
+if ($srcWorkspace) {
+    Write-Host "  Source workspace: $srcWorkspace"
+} else {
+    Write-Host "  Source workspace: (none — use -WorkspacePath to include agent files)" -ForegroundColor Yellow
+}
 Write-Host ''
 
 # --- Helper: copy a directory without overwriting ---
@@ -106,10 +113,14 @@ foreach ($file in $repoFiles) {
 }
 Write-Host "    Copied $copied files, skipped $skipped existing" -ForegroundColor Gray
 
-# --- 2. Copy Tachi workspace ---
-Write-Host '[2/3] Copying Tachi workspace...' -ForegroundColor Cyan
-if (-not (Test-Path $srcWorkspace)) {
-    Write-Host "    WARNING: $srcWorkspace not found - skipping" -ForegroundColor Yellow
+# --- 2. Copy agent workspace ---
+Write-Host '[2/3] Copying agent workspace...' -ForegroundColor Cyan
+if (-not $srcWorkspace -or -not (Test-Path $srcWorkspace)) {
+    if (-not $srcWorkspace) {
+        Write-Host "    SKIPPED: No workspace path provided (use -WorkspacePath)" -ForegroundColor Yellow
+    } else {
+        Write-Host "    WARNING: $srcWorkspace not found - skipping" -ForegroundColor Yellow
+    }
 } else {
     if (-not (Test-Path $destWorkspace)) {
         New-Item -ItemType Directory -Path $destWorkspace -Force | Out-Null
@@ -148,6 +159,6 @@ Write-Host '   cp -r /mnt/usb/openclaw_deploy/openclaw_setup ~/openclaw_setup' -
 Write-Host '   cd ~/openclaw_setup' -ForegroundColor White
 Write-Host '   cp /mnt/usb/openclaw_deploy/config.env .' -ForegroundColor White
 Write-Host '   # Edit config.env and set:' -ForegroundColor Gray
-Write-Host '   # OPENCLAW_MIGRATE_FROM="/mnt/usb/openclaw_deploy/tachi-workspace"' -ForegroundColor Gray
+Write-Host '   # OPENCLAW_MIGRATE_FROM="/mnt/usb/openclaw_deploy/agent-workspace"' -ForegroundColor Gray
 Write-Host '   sudo ./setup.sh' -ForegroundColor White
 Write-Host ''

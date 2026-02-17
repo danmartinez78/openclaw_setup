@@ -5,6 +5,9 @@ setup.log
 # User config (may contain API keys after editing)
 config.env
 
+# Editor settings
+.vscode/
+
 # vLLM secrets
 vllm/.env
 
