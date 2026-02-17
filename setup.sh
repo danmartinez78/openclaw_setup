@@ -19,6 +19,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# --- Fix Windows line endings (CRLF → LF) if needed ---
+if grep -qP '\r$' "${BASH_SOURCE[0]}" 2>/dev/null; then
+    echo "Fixing Windows line endings..."
+    if command -v dos2unix &>/dev/null; then
+        dos2unix "${SCRIPT_DIR}/config.env" "${SCRIPT_DIR}/setup.sh" "${SCRIPT_DIR}"/modules/*.sh 2>/dev/null
+    else
+        sed -i 's/\r$//' "${SCRIPT_DIR}/config.env" "${SCRIPT_DIR}/setup.sh" "${SCRIPT_DIR}"/modules/*.sh
+    fi
+    echo "Fixed. Re-running..."
+    exec bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 # --- Root check ---
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: This script must be run as root (use sudo)."

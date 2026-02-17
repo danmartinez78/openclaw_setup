@@ -144,7 +144,7 @@ install_openclaw() {
     # Install openclaw CLI globally if not present
     if ! is_installed openclaw; then
         log_info "Installing OpenClaw CLI..."
-        run_as_user "npm install -g openclaw@latest"
+        npm install -g openclaw@latest
     fi
 
     log_info "OpenClaw CLI version: $(run_as_user 'openclaw --version 2>/dev/null || echo unknown')"
