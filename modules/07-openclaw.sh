@@ -86,7 +86,7 @@ _copy_workspace_files() {
              TASKS.md TASK_BACKLOG.md COMPLETED_TASKS.md MIGRATION_PLAN.md; do
         if [[ -f "${src}/${f}" ]]; then
             cp -v "${src}/${f}" "${dest}/${f}"
-            ((copied++))
+            copied=$((copied + 1))
         fi
     done
 
@@ -97,7 +97,7 @@ _copy_workspace_files() {
             local count
             count="$(find "${dest}/${d}" -type f | wc -l)"
             log_info "  Migrated ${d}/ directory (${count} files)"
-            ((copied++))
+            copied=$((copied + 1))
         fi
     done
 
