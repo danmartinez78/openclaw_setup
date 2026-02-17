@@ -9,8 +9,9 @@ A modular, idempotent setup script that takes a fresh Ubuntu 24.04 install to a 
 git clone https://github.com/danmartinez78/openclaw_setup.git
 cd openclaw_setup
 
-# 2. Edit configuration (optional — defaults are sensible)
-nano config.env
+# 2. Create your config from the template
+cp config.env.example config.env
+nano config.env          # Set API keys and preferences
 
 # 3. Run the setup
 sudo ./setup.sh

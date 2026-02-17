@@ -28,8 +28,14 @@ fi
 
 # --- Source config ---
 if [[ ! -f "${SCRIPT_DIR}/config.env" ]]; then
-    echo "ERROR: config.env not found. Copy config.env.example to config.env and edit it."
-    exit 1
+    if [[ -f "${SCRIPT_DIR}/config.env.example" ]]; then
+        cp "${SCRIPT_DIR}/config.env.example" "${SCRIPT_DIR}/config.env"
+        echo "Created config.env from template. Edit it to set API keys, then re-run."
+        exit 0
+    else
+        echo "ERROR: config.env not found. Copy config.env.example to config.env and edit it."
+        exit 1
+    fi
 fi
 # shellcheck source=config.env
 source "${SCRIPT_DIR}/config.env"
